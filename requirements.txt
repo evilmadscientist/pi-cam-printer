@@ -1,0 +1,7 @@
+# picamera2 and libcamera are best installed from apt on Raspberry Pi OS:
+#   sudo apt install -y python3-picamera2 python3-gpiozero python3-serial python3-pil python3-numpy
+picamera2
+gpiozero
+pyserial
+Pillow
+numpy
