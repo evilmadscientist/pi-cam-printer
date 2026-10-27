@@ -53,6 +53,7 @@ PRINTER_WIDTH_DOTS = 384
 MAX_ROW_BYTES = PRINTER_WIDTH_DOTS // 8  # 48
 MAX_CHUNK_ROWS = 255
 DTR_PIN = 23
+IDLE_TIME_POST_S = 30
 
 ESC = 0x1B
 DC2 = 0x12
@@ -68,6 +69,7 @@ class ThermalPrinter:
         heat_interval=40,
         dtr_pin=DTR_PIN,
         dtr_timeout=5.0,
+        idle_time_post_s=IDLE_TIME_POST_S
     ):
         """Connect to CUPS and initialise the printer queue.
 
@@ -206,11 +208,13 @@ def print_image(
     num_segments=1,
     segment_delay=1.0,
     dtr_pin=DTR_PIN,
+    idle_time_post_s=IDLE_TIME_POST_S
 ):
     """One-shot helper: connect to CUPS, print a bitmap, feed paper."""
     printer = ThermalPrinter(printer_name=printer_name, dtr_pin=dtr_pin)
     try:
         printer.print_bitmap(data, width, height, num_segments=num_segments, segment_delay=segment_delay)
+        time.sleep(idle_time_post_s)
         printer.feed(feed_lines)
     finally:
         printer.close()

@@ -35,10 +35,12 @@ def parse_args():
                         help="number of vertical segments to split the print into (default 1)")
     parser.add_argument("--segment-delay", type=float, default=1.0,
                         help="seconds to pause between print segments (default 1.0)")
+    '''
     parser.add_argument("--dtr-pin", type=int, default=DTR_PIN,
                         help=f"BCM GPIO pin wired to the printer's DTR line, for flow control (default {DTR_PIN})")
     parser.add_argument("--no-dtr", action="store_true",
                         help="disable DTR flow control and fall back to fixed-delay pacing")
+    '''
     parser.add_argument("--test", action="store_true",
                         help="run the full sequence once immediately (no button press needed), then quit")
     return parser.parse_args()
