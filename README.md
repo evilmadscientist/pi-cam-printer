@@ -20,8 +20,11 @@ Each module can also be run on its own for testing, e.g.
 ## Wiring
 
 - **Button:** GPIO 2 (pin 3) to GND. GPIO 2 already has a pull-up resistor on the board.
-- **Printer:** printer RX to Pi TX (GPIO 14, pin 8), printer GND to Pi GND. Power the printer
-  from its own 5–9 V, 2 A supply.
+- **Printer:** printer RX to Pi TX (GPIO 14, pin 8), printer GND to Pi GND, printer DTR to
+  GPIO 23 (pin 16, `--dtr-pin` to change). Power the printer from its own 5–9 V, 2 A supply.
+  The DTR line runs at the printer's logic level (5 V on most of these boards), so put a
+  voltage divider on it before it reaches the Pi's 3.3 V-only GPIO. Pass `--no-dtr` if your
+  printer's cable doesn't have a DTR wire (the classic 3-wire "Mini" #597 doesn't).
 - **Camera:** IMX708 ribbon to the CSI port.
 
 ## Raspberry Pi setup

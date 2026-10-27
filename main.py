@@ -15,7 +15,7 @@ from PIL import Image
 from convert_image import convert_image
 from dither import dither
 from downscale import DEFAULT_HEIGHT, downscale
-from print_image import PRINTER_WIDTH_DOTS, print_image
+from print_image import DTR_PIN, PRINTER_WIDTH_DOTS, print_image
 from take_photo import Camera
 
 BUTTON_GPIO = 2
@@ -31,10 +31,14 @@ def parse_args():
                         help="gamma before dithering; <1 lightens to offset thermal dot gain")
     parser.add_argument("--output-dir", default="captures",
                         help="where to save photos and HEX files ('' to disable)")
-    parser.add_argument("--segments", type=int, default=8,
-                        help="number of vertical segments to split the print into (default 8)")
-    parser.add_argument("--segment-delay", type=float, default=2.0,
+    parser.add_argument("--segments", type=int, default=1,
+                        help="number of vertical segments to split the print into (default 1)")
+    parser.add_argument("--segment-delay", type=float, default=1.0,
                         help="seconds to pause between print segments (default 1.0)")
+    parser.add_argument("--dtr-pin", type=int, default=DTR_PIN,
+                        help=f"BCM GPIO pin wired to the printer's DTR line, for flow control (default {DTR_PIN})")
+    parser.add_argument("--no-dtr", action="store_true",
+                        help="disable DTR flow control and fall back to fixed-delay pacing")
     parser.add_argument("--test", action="store_true",
                         help="run the full sequence once immediately (no button press needed), then quit")
     return parser.parse_args()
@@ -60,6 +64,7 @@ def process(photo, args, stem=None):
         data, width, height,
         port=args.port, baudrate=args.baud,
         num_segments=args.segments, segment_delay=args.segment_delay,
+        dtr_pin=None if args.no_dtr else args.dtr_pin,
     )
 
 
