@@ -31,6 +31,10 @@ def parse_args():
                         help="gamma before dithering; <1 lightens to offset thermal dot gain")
     parser.add_argument("--output-dir", default="captures",
                         help="where to save photos and HEX files ('' to disable)")
+    parser.add_argument("--segments", type=int, default=8,
+                        help="number of vertical segments to split the print into (default 8)")
+    parser.add_argument("--segment-delay", type=float, default=2.0,
+                        help="seconds to pause between print segments (default 1.0)")
     parser.add_argument("--test", action="store_true",
                         help="run the full sequence once immediately (no button press needed), then quit")
     return parser.parse_args()
@@ -52,7 +56,11 @@ def process(photo, args, stem=None):
         hex_path = stem + ".h"
 
     data, width, height = convert_image(bw, hex_path)
-    print_image(data, width, height, port=args.port, baudrate=args.baud)
+    print_image(
+        data, width, height,
+        port=args.port, baudrate=args.baud,
+        num_segments=args.segments, segment_delay=args.segment_delay,
+    )
 
 
 def capture_and_print(camera, args):
