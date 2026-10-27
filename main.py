@@ -25,8 +25,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT,
                         help=f"downscaled image height in pixels (default {DEFAULT_HEIGHT})")
-    parser.add_argument("--port", default="/dev/serial0", help="printer serial port")
-    parser.add_argument("--baud", type=int, default=19200, help="printer baud rate")
+    parser.add_argument("--printer-name", default=None,
+                        help="CUPS queue to print to (default: the CUPS default printer)")
     parser.add_argument("--gamma", type=float, default=0.8,
                         help="gamma before dithering; <1 lightens to offset thermal dot gain")
     parser.add_argument("--output-dir", default="captures",
@@ -62,7 +62,7 @@ def process(photo, args, stem=None):
     data, width, height = convert_image(bw, hex_path)
     print_image(
         data, width, height,
-        port=args.port, baudrate=args.baud,
+        printer_name=args.printer_name,
         num_segments=args.segments, segment_delay=args.segment_delay,
         dtr_pin=None if args.no_dtr else args.dtr_pin,
     )
