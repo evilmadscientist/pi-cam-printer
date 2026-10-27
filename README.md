@@ -20,11 +20,8 @@ Each module can also be run on its own for testing, e.g.
 ## Wiring
 
 - **Button:** GPIO 2 (pin 3) to GND. GPIO 2 already has a pull-up resistor on the board.
-- **Printer:** printer RX to Pi TX (GPIO 14, pin 8), printer GND to Pi GND, printer DTR to
-  GPIO 23 (pin 16, `--dtr-pin` to change). Power the printer from its own 5–9 V, 2 A supply.
-  The DTR line runs at the printer's logic level (5 V on most of these boards), so put a
-  voltage divider on it before it reaches the Pi's 3.3 V-only GPIO. Pass `--no-dtr` if your
-  printer's cable doesn't have a DTR wire (the classic 3-wire "Mini" #597 doesn't).
+- **Printer:** printer RX to Pi TX (GPIO 14, pin 8), printer GND to Pi GND. Power the printer
+  from its own 5–9 V, 2 A supply.
 - **Camera:** IMX708 ribbon to the CSI port.
 
 ## Raspberry Pi setup
@@ -56,10 +53,15 @@ sudo usermod -aG lpadmin $USER   # log out/in (or reboot) for this to take effec
 
 # Build and install the ZJ-58 CUPS driver/filter for these ESC/POS printers
 git clone https://github.com/klirichek/zj-58.git
-cd zj-58 && mkdir build && cd build
-cmake .. && cmake --build .
-sudo make install                # restarts CUPS
+cd zj-58
+make
+sudo ./install                # restarts CUPS
 
+# Create a queue for this printer
+# Can create through Debian GUI (Print Settings) (done for this instance)
+# See instructions at Adafruit's website here: https://learn.adafruit.com/networked-thermal-printer-using-cups-and-raspberry-pi/connect-and-configure-printer
+
+# If no GUI available, do so through the terminal.
 # Find the installed PPD's exact CUPS identifier, then create the queue.
 # Baud rate must match what the printer's self-test page reports (usually
 # 19200); add &flow=soft to the URI to also enable the printer's own
@@ -96,13 +98,13 @@ destination (status, retry, and other apps can print to it too), and the baud
 rate/device live in the CUPS queue's configuration rather than as `--port`/
 `--baud` flags here (those flags are gone).
 
-One real trade-off: the old direct-serial version paced its DTR checks and
-delays between small 16-row chunks of a *single* continuous serial write.
-Once CUPS's serial backend owns the device, this script can't interleave
-writes like that -- each *segment* (`--segments`, default 1) is sent as one
-complete CUPS job instead, with the DTR pin and `--segment-delay` only
-checked between job submissions. That's coarser, and each extra segment costs
-a full serial-port close/reopen. If a single-segment, DTR-paced print still
-comes out garbled, try the `&flow=soft` queue option above instead, which
-pushes the flow control down into the kernel's serial driver where it can
-throttle every byte CUPS writes, not just the gaps between jobs.
+One real trade-off: the old direct-serial version paced delays between small
+16-row chunks of a *single* continuous serial write. Once CUPS's serial
+backend owns the device, this script can't interleave writes like that --
+each *segment* (`--segments`, default 1) is sent as one complete CUPS job
+instead, with `--segment-delay` only applied between job submissions. That's
+coarser, and each extra segment costs a full serial-port close/reopen. If a
+single-segment print still comes out garbled, try the `&flow=soft` queue
+option above instead, which pushes flow control down into the kernel's
+serial driver where it can throttle every byte CUPS writes, not just the
+gaps between jobs.

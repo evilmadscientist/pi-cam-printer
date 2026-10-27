@@ -20,19 +20,14 @@ Why CUPS instead of talking to the serial port directly:
   coordinate with anything else that might want to.
 - Jobs are spooled, so a print survives this script restarting mid-job.
 
-Trade-off vs. the direct-serial version: once CUPS's serial backend owns the
-device, this module can't interleave live, per-chunk writes with GPIO DTR
-checks the way the old print_bitmap() did (that required writing the bytes
-itself, one small chunk at a time, waiting between each). Here, each
-*segment* is sent as a single, complete CUPS job; the DTR pin is checked
-between job submissions, not between every few rows. That's coarser than
-before, and sending more than one segment costs an extra serial-port
-open/close (and its short resync delay) per segment, which is why the
-default is a single segment. If you still see garbled prints, consider
-instead configuring XON/XOFF software flow control on the queue itself
-(these printers support it; add ``&flow=soft`` to the device URI given to
-``lpadmin``) -- that lets the kernel's serial driver throttle the CUPS
-backend's writes automatically, with no per-job overhead.
+Flow control: the image is split into ``num_segments`` jobs with a
+``segment_delay`` pause between submissions, which is a coarse safety margin
+against overrunning the printer's receive buffer -- CUPS's serial backend
+writes a whole job in one go, so this script has no way to pace the bytes
+within a job. For finer-grained protection, configure XON/XOFF software flow
+control on the queue itself (these printers support it; add ``&flow=soft`` to
+the device URI given to ``lpadmin``) -- that lets the kernel's serial driver
+throttle every byte the backend writes, not just the gaps between jobs.
 """
 
 import os
@@ -44,43 +39,23 @@ try:
 except ImportError:  # python3-cups not installed, or not running on the Pi
     cups = None
 
-try:
-    from gpiozero import DigitalInputDevice
-except ImportError:  # not installed / not running on a Pi
-    DigitalInputDevice = None
-
 PRINTER_WIDTH_DOTS = 384
 MAX_ROW_BYTES = PRINTER_WIDTH_DOTS // 8  # 48
 MAX_CHUNK_ROWS = 255
-DTR_PIN = 23
 IDLE_TIME_POST_S = 30
 
 ESC = 0x1B
 DC2 = 0x12
-GS = 0x1D
 
 
 class ThermalPrinter:
-    def __init__(
-        self,
-        printer_name=None,
-        heat_dots=11,
-        heat_time=120,
-        heat_interval=40,
-        dtr_pin=DTR_PIN,
-        dtr_timeout=5.0,
-        idle_time_post_s=IDLE_TIME_POST_S
-    ):
+    def __init__(self, printer_name=None, heat_dots=11, heat_time=120, heat_interval=40):
         """Connect to CUPS and initialise the printer queue.
 
         printer_name: the CUPS queue to print to. None uses the CUPS default
         (``lpoptions -d``), or the only configured printer if there's just one.
         heat_time/heat_interval/heat_dots: see the printer's ESC/POS manual;
         higher heat_time/heat_interval = darker but slower.
-        dtr_pin: BCM GPIO pin wired to the printer's DTR line, used to pace
-        job submission. Pass None to disable and submit jobs back-to-back.
-        dtr_timeout: max seconds to wait on the DTR line before giving up and
-        continuing anyway, in case it's wired wrong or disconnected.
         """
         if cups is None:
             raise RuntimeError(
@@ -90,27 +65,10 @@ class ThermalPrinter:
         self._printer_name = self._resolve_printer_name(printer_name)
         self._job_title_counter = 0
 
-        self._dtr = None
-        if dtr_pin is not None:
-            if DigitalInputDevice is None:
-                raise RuntimeError(
-                    "gpiozero is required for DTR flow control (pip install gpiozero), "
-                    "or pass dtr_pin=None to submit jobs without it"
-                )
-            # Idle/busy = HIGH, ready = LOW, so with pull_up=True "active" (pin
-            # LOW) means "ready for more data" -- matching the printer's signal.
-            self._dtr = DigitalInputDevice(dtr_pin, pull_up=True)
-        self._dtr_timeout = dtr_timeout
-
-        # Reset + heat config, and (if DTR is wired) the same command the
-        # Adafruit Arduino library sends to make the printer start driving its
-        # DTR pin. Submitted immediately as its own small job.
+        # Reset + heat config, submitted immediately as its own small job.
         init = bytearray([ESC, ord("@")])
         init += bytes([ESC, ord("7"), heat_dots, heat_time, heat_interval])
         init += bytes([DC2, ord("#"), (4 << 5) | 10])
-        if self._dtr is not None:
-            init += bytes([GS, ord("a"), 1 << 5])
-        self._wait_ready()
         self._submit_job(bytes(init), "init")
 
     def _resolve_printer_name(self, printer_name):
@@ -131,11 +89,6 @@ class ThermalPrinter:
                 f"Configured printers: {', '.join(printers) or '(none)'}. See README.md for setup."
             )
         return printer_name
-
-    def _wait_ready(self):
-        """Block until the printer's DTR line says it can accept more data."""
-        if self._dtr is not None:
-            self._dtr.wait_for_active(timeout=self._dtr_timeout)
 
     def _submit_job(self, payload, label):
         """Submit raw ESC/POS bytes to the CUPS queue as one print job."""
@@ -161,7 +114,7 @@ class ThermalPrinter:
         The image is split into ``num_segments`` vertical segments (top to
         bottom), each submitted as its own CUPS job, in order, with a
         ``segment_delay`` second pause between submissions. See the module
-        docstring for why this is coarser than the old per-chunk pacing.
+        docstring for the reasoning and for a finer-grained alternative.
         """
         row_bytes = (width + 7) // 8
         row_bytes_clipped = min(row_bytes, MAX_ROW_BYTES)
@@ -183,20 +136,16 @@ class ThermalPrinter:
                     offset = y * row_bytes
                     payload += data[offset:offset + row_bytes_clipped]
 
-            self._wait_ready()
             self._submit_job(bytes(payload), f"segment-{i}")
             if i < len(segment_starts) - 1:
                 time.sleep(segment_delay)
-        self._wait_ready()  # let the last segment finish before feed()
 
     def feed(self, lines=1):
-        self._wait_ready()
         self._submit_job(bytes([ESC, ord("d"), lines]), "feed")
         time.sleep(lines * 0.05)
 
     def close(self):
-        if self._dtr is not None:
-            self._dtr.close()
+        pass
 
 
 def print_image(
@@ -207,11 +156,10 @@ def print_image(
     feed_lines=3,
     num_segments=1,
     segment_delay=1.0,
-    dtr_pin=DTR_PIN,
-    idle_time_post_s=IDLE_TIME_POST_S
+    idle_time_post_s=IDLE_TIME_POST_S,
 ):
     """One-shot helper: connect to CUPS, print a bitmap, feed paper."""
-    printer = ThermalPrinter(printer_name=printer_name, dtr_pin=dtr_pin)
+    printer = ThermalPrinter(printer_name=printer_name)
     try:
         printer.print_bitmap(data, width, height, num_segments=num_segments, segment_delay=segment_delay)
         time.sleep(idle_time_post_s)
