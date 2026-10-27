@@ -31,6 +31,8 @@ def parse_args():
                         help="gamma before dithering; <1 lightens to offset thermal dot gain")
     parser.add_argument("--output-dir", default="captures",
                         help="where to save photos and HEX files ('' to disable)")
+    parser.add_argument("--test", action="store_true",
+                        help="run the full sequence once immediately (no button press needed), then quit")
     return parser.parse_args()
 
 
@@ -53,31 +55,44 @@ def process(photo, args, stem=None):
     print_image(data, width, height, port=args.port, baudrate=args.baud)
 
 
+def capture_and_print(camera, args):
+    """Take one photo and run it through the print pipeline."""
+    print("Taking photo...")
+    photo = camera.take_photo()
+    stem = None
+    if args.output_dir:
+        stem = os.path.join(args.output_dir, datetime.now().strftime("%Y%m%d_%H%M%S"))
+    print("Printing...")
+    process(photo, args, stem)
+
+
 def main():
     args = parse_args()
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
 
-    button = Button(BUTTON_GPIO, pull_up=True, bounce_time=0.05)
     camera = Camera()
-    print("Ready. Press the button to take a photo (Ctrl+C to quit).")
+    button = None
     try:
+        if args.test:
+            print("Running test sequence...")
+            capture_and_print(camera, args)
+            print("Done.")
+            return
+
+        button = Button(BUTTON_GPIO, pull_up=True, bounce_time=0.05)
+        print("Ready. Press the button to take a photo (Ctrl+C to quit).")
         while True:
             button.wait_for_press()  # idle until GPIO 2 is pulled LOW
-            print("Taking photo...")
-            photo = camera.take_photo()
-            stem = None
-            if args.output_dir:
-                stem = os.path.join(args.output_dir, datetime.now().strftime("%Y%m%d_%H%M%S"))
-            print("Printing...")
-            process(photo, args, stem)
+            capture_and_print(camera, args)
             print("Done. Ready for the next photo.")
             button.wait_for_release()
     except KeyboardInterrupt:
         pass
     finally:
         camera.close()
-        button.close()
+        if button:
+            button.close()
 
 
 if __name__ == "__main__":

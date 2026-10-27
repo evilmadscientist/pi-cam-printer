@@ -15,12 +15,23 @@ the image is contrast-stretched, lightened with a gamma curve and sharpened
 before dithering.
 """
 
+import os
+
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
 
+def _open(image):
+    """Accept a PIL image or a path to an image file (JPEG, PNG, ...)."""
+    if isinstance(image, (str, os.PathLike)):
+        with Image.open(image) as f:
+            return f.convert("RGB")
+    return image
+
+
 def preprocess(image, gamma=0.8, sharpen=True):
     """Prepare a photo for dithering: grayscale, autocontrast, gamma, sharpen."""
+    image = _open(image)
     gray = ImageOps.autocontrast(image.convert("L"), cutoff=1)
     if sharpen:
         gray = gray.filter(ImageFilter.UnsharpMask(radius=2, percent=80, threshold=2))
@@ -61,11 +72,14 @@ def floyd_steinberg(gray):
 
 
 def dither(image, gamma=0.8, sharpen=True):
-    """Convert any PIL image to a 1-bit dithered PIL image (mode '1')."""
+    """Convert an image to a 1-bit dithered PIL image (mode '1').
+
+    ``image`` may be a PIL image or a path to an image file (JPEG, PNG).
+    """
     return floyd_steinberg(preprocess(image, gamma=gamma, sharpen=sharpen))
 
 
 if __name__ == "__main__":
     import sys
 
-    dither(Image.open(sys.argv[1])).save(sys.argv[2])
+    dither(sys.argv[1]).save(sys.argv[2])
