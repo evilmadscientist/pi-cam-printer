@@ -42,7 +42,6 @@ except ImportError:  # python3-cups not installed, or not running on the Pi
 PRINTER_WIDTH_DOTS = 384
 MAX_ROW_BYTES = PRINTER_WIDTH_DOTS // 8  # 48
 MAX_CHUNK_ROWS = 255
-IDLE_TIME_POST_S = 30
 
 ESC = 0x1B
 DC2 = 0x12
@@ -65,11 +64,14 @@ class ThermalPrinter:
         self._printer_name = self._resolve_printer_name(printer_name)
         self._job_title_counter = 0
 
-        # Reset + heat config, submitted immediately as its own small job.
+        # Reset + heat config. Not submitted yet -- folded into the first job
+        # print_bitmap() sends, so a whole print costs as few separate CUPS
+        # jobs as possible (each job makes the serial backend close and
+        # reopen the device, which can visibly fragment a print).
         init = bytearray([ESC, ord("@")])
         init += bytes([ESC, ord("7"), heat_dots, heat_time, heat_interval])
         init += bytes([DC2, ord("#"), (4 << 5) | 10])
-        self._submit_job(bytes(init), "init")
+        self._pending_init = bytes(init)
 
     def _resolve_printer_name(self, printer_name):
         printers = self._conn.getPrinters()
@@ -106,7 +108,7 @@ class ThermalPrinter:
         finally:
             os.unlink(path)
 
-    def print_bitmap(self, data, width, height, num_segments=1, segment_delay=1.0):
+    def print_bitmap(self, data, width, height, num_segments=1, segment_delay=1.0, feed_lines=0):
         """Print packed bitmap rows (MSB = leftmost dot, 1 = black).
 
         Rows wider than the 384-dot print head are clipped on the right.
@@ -115,6 +117,12 @@ class ThermalPrinter:
         bottom), each submitted as its own CUPS job, in order, with a
         ``segment_delay`` second pause between submissions. See the module
         docstring for the reasoning and for a finer-grained alternative.
+
+        The printer's init bytes (sent once, the first time this is called)
+        and, if ``feed_lines`` is set, a paper feed, are folded into the
+        first/last segment's job instead of being separate jobs -- every
+        extra job costs a serial-port close/reopen, which can visibly
+        fragment the print.
         """
         row_bytes = (width + 7) // 8
         row_bytes_clipped = min(row_bytes, MAX_ROW_BYTES)
@@ -126,6 +134,9 @@ class ThermalPrinter:
         for i, seg_start in enumerate(segment_starts):
             seg_end = min(seg_start + segment_height, height)
             payload = bytearray()
+            if self._pending_init is not None:
+                payload += self._pending_init
+                self._pending_init = None
             # A segment can still exceed the printer's own max rows per
             # bitmap command, so split it into DC2 '*' blocks of at most
             # MAX_CHUNK_ROWS -- all within this one job.
@@ -136,11 +147,17 @@ class ThermalPrinter:
                     offset = y * row_bytes
                     payload += data[offset:offset + row_bytes_clipped]
 
+            is_last = i == len(segment_starts) - 1
+            if is_last and feed_lines:
+                payload += bytes([ESC, ord("d"), feed_lines])
             self._submit_job(bytes(payload), f"segment-{i}")
-            if i < len(segment_starts) - 1:
+            if not is_last:
                 time.sleep(segment_delay)
 
     def feed(self, lines=1):
+        """Feed blank paper as its own job. Not used by the main print path --
+        print_bitmap()'s feed_lines folds this into the last segment's job
+        instead, to avoid an extra serial-port close/reopen."""
         self._submit_job(bytes([ESC, ord("d"), lines]), "feed")
         time.sleep(lines * 0.05)
 
@@ -156,14 +173,15 @@ def print_image(
     feed_lines=3,
     num_segments=1,
     segment_delay=1.0,
-    idle_time_post_s=IDLE_TIME_POST_S,
 ):
-    """One-shot helper: connect to CUPS, print a bitmap, feed paper."""
+    """One-shot helper: connect to CUPS and print a bitmap (plus a paper feed,
+    folded into the same job as the last segment)."""
     printer = ThermalPrinter(printer_name=printer_name)
     try:
-        printer.print_bitmap(data, width, height, num_segments=num_segments, segment_delay=segment_delay)
-        time.sleep(idle_time_post_s)
-        printer.feed(feed_lines)
+        printer.print_bitmap(
+            data, width, height,
+            num_segments=num_segments, segment_delay=segment_delay, feed_lines=feed_lines,
+        )
     finally:
         printer.close()
 
