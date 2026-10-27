@@ -15,7 +15,7 @@ from PIL import Image
 from convert_image import convert_image
 from dither import dither
 from downscale import DEFAULT_HEIGHT, downscale
-from print_image import PRINTER_WIDTH_DOTS, print_image
+from print_image import DEFAULT_PORT, PRINTER_WIDTH_DOTS, print_image
 from take_photo import Camera
 
 BUTTON_GPIO = 2
@@ -25,16 +25,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT,
                         help=f"downscaled image height in pixels (default {DEFAULT_HEIGHT})")
-    parser.add_argument("--printer-name", default=None,
-                        help="CUPS queue to print to (default: the CUPS default printer)")
+    parser.add_argument("--port", default=DEFAULT_PORT,
+                        help=f"Teensy's USB serial port (default {DEFAULT_PORT})")
     parser.add_argument("--gamma", type=float, default=0.8,
                         help="gamma before dithering; <1 lightens to offset thermal dot gain")
     parser.add_argument("--output-dir", default="captures",
                         help="where to save photos and HEX files ('' to disable)")
-    parser.add_argument("--segments", type=int, default=1,
-                        help="number of vertical segments to split the print into (default 1)")
-    parser.add_argument("--segment-delay", type=float, default=1.0,
-                        help="seconds to pause between print segments (default 1.0)")
     parser.add_argument("--test", action="store_true",
                         help="run the full sequence once immediately (no button press needed), then quit")
     return parser.parse_args()
@@ -56,11 +52,7 @@ def process(photo, args, stem=None):
         hex_path = stem + ".h"
 
     data, width, height = convert_image(bw, hex_path)
-    print_image(
-        data, width, height,
-        printer_name=args.printer_name,
-        num_segments=args.segments, segment_delay=args.segment_delay,
-    )
+    print_image(data, width, height, port=args.port)
 
 
 def capture_and_print(camera, args):

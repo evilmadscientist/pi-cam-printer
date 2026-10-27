@@ -1,9 +1,7 @@
-# picamera2, gpiozero and pycups (the "cups" module) are best installed from
-# apt on Raspberry Pi OS -- pycups in particular needs CUPS's dev headers to
-# build and isn't a plain pip install:
-#   sudo apt install -y python3-picamera2 python3-gpiozero python3-cups python3-pil python3-numpy
+# picamera2 and gpiozero are best installed from apt on Raspberry Pi OS:
+#   sudo apt install -y python3-picamera2 python3-gpiozero python3-serial python3-pil python3-numpy
 picamera2
 gpiozero
-pycups
+pyserial
 Pillow
 numpy
