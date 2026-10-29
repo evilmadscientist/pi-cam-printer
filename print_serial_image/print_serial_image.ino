@@ -34,9 +34,11 @@
 #include <Adafruit_Thermal.h>
 
 // ---- Settings ----
-// Set USE_DTR to 0 to fall back to the library's timed pacing if the DTR
-// wire isn't connected. With USE_DTR 1 and no DTR wire, the input's pull-up
-// reads "busy" forever and printing hangs until the Teensy is reset.
+// With USE_DTR 1, setup() checks that the printer really drives its DTR line
+// (LOW = ready). If it doesn't (wire not connected, wrong pad, firmware
+// without DTR support), the sketch falls back to the library's timed pacing
+// instead of waiting on the pin forever, and says so in the "#" line it
+// sends before READY. Set USE_DTR to 0 to skip the check entirely.
 #define USE_DTR 1
 const uint8_t  DTR_PIN = 4;
 const uint32_t PRINTER_BAUD = 19200;   // from the printer's self-test page
@@ -54,14 +56,38 @@ const uint16_t MAX_HEIGHT = 800;                // 38,400-byte buffer; Teensy 3.
 
 static uint8_t bitmap[MAX_ROW_BYTES * MAX_HEIGHT];
 
-Adafruit_Thermal printer(&Serial1, USE_DTR ? DTR_PIN : 255);
+Adafruit_Thermal *printer;
+bool dtrActive = false;
+
+// Ask the printer to drive its DTR line, then see whether it ever reads LOW
+// (ready). The library itself waits on the pin with no timeout, so it must
+// only be told to use DTR once we know the line responds.
+bool probeDtr() {
+  pinMode(DTR_PIN, INPUT_PULLUP);
+  Serial1.write(0x1D);  // GS 'a' n: same command Adafruit_Thermal::begin() sends
+  Serial1.write('a');
+  Serial1.write((uint8_t)(1 << 5));
+  Serial1.flush();
+  uint32_t start = millis();
+  while (millis() - start < 1000) {
+    if (digitalRead(DTR_PIN) == LOW) {
+      return true;
+    }
+  }
+  return false;
+}
 
 void setup() {
   Serial.begin(115200);  // native USB serial; the baud rate is ignored
   Serial.setTimeout(TRANSFER_TIMEOUT_MS);
   Serial1.begin(PRINTER_BAUD);
-  printer.begin();  // with a DTR pin, this also tells the printer to drive DTR
-  printer.setHeatConfig(HEAT_DOTS, HEAT_TIME, HEAT_INTERVAL);
+  delay(600);  // the printer needs a moment after power-up
+#if USE_DTR
+  dtrActive = probeDtr();
+#endif
+  printer = new Adafruit_Thermal(&Serial1, dtrActive ? DTR_PIN : 255);
+  printer->begin();
+  printer->setHeatConfig(HEAT_DOTS, HEAT_TIME, HEAT_INTERVAL);
 }
 
 void loop() {
@@ -112,6 +138,8 @@ void receiveAndPrint() {
     return;
   }
   size_t length = (size_t)((width + 7) / 8) * height;
+  Serial.println(dtrActive ? "# DTR flow control active"
+                           : "# DTR not responding, using timed pacing");
   Serial.println("READY");
 
   if (Serial.readBytes((char *)bitmap, length) != length) {
@@ -138,9 +166,9 @@ void receiveAndPrint() {
 
   // With DTR enabled, the library waits on the printer's ready signal before
   // every byte, so the whole image can go out in one call.
-  printer.printBitmap(width, height, bitmap, false);
+  printer->printBitmap(width, height, bitmap, false);
   if (feedLines) {
-    printer.feed(feedLines);
+    printer->feed(feedLines);
   }
   Serial.println("PRINTED");
 }

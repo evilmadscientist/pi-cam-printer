@@ -80,7 +80,15 @@ def print_image(data, width, height, port=DEFAULT_PORT, feed_lines=3, print_time
     with serial.Serial(port, 115200, timeout=0.5, write_timeout=10) as ser:
         ser.reset_input_buffer()
         ser.write(MAGIC + struct.pack("<HHB", width, height, feed_lines))
-        _expect(ser, "READY", timeout=5)
+        try:
+            _expect(ser, "READY", timeout=5)
+        except TeensyError as e:
+            if "timed out" in str(e):
+                raise TeensyError(
+                    f"{e}. Is print_serial_image.ino flashed and running on {port}? "
+                    "A stuck setup() (e.g. waiting on the printer) looks the same."
+                ) from None
+            raise
 
         ser.write(data)
         ser.write(DONE + struct.pack("<I", checksum))

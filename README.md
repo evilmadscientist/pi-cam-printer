@@ -38,8 +38,10 @@ Each Python module can also be run on its own for testing, e.g.
 
 Settings such as the DTR pin, the printer's baud rate (from its self-test page: hold the
 feed button while powering it on) and heat settings are constants at the top of the sketch.
-If the DTR wire isn't connected, set `USE_DTR` to `0`. Otherwise printing hangs, because the
-pin reads as "busy" forever.
+At startup the sketch checks that the printer really drives its DTR line. If it doesn't
+(wire not connected, wrong pad, or firmware without DTR support), it falls back to the
+library's timed pacing and reports `# DTR not responding, using timed pacing` back to the Pi
+before each print. Set `USE_DTR` to `0` to skip the check.
 
 ## Raspberry Pi setup
 
