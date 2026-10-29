@@ -40,7 +40,7 @@
 // instead of waiting on the pin forever, and says so in the "#" line it
 // sends before READY. Set USE_DTR to 0 to skip the check entirely.
 #define USE_DTR 1
-const uint8_t  DTR_PIN = 4;
+const uint8_t  DTR_PIN = 3;
 const uint32_t PRINTER_BAUD = 19200;   // from the printer's self-test page
 const uint8_t  HEAT_DOTS = 11;
 const uint8_t  HEAT_TIME = 120;        // higher = darker but slower

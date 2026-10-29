@@ -18,7 +18,7 @@ from downscale import DEFAULT_HEIGHT, downscale
 from print_image import DEFAULT_PORT, PRINTER_WIDTH_DOTS, print_image
 from take_photo import Camera
 
-BUTTON_GPIO = 2
+BUTTON_GPIO = 12
 
 
 def parse_args():
